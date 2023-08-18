@@ -1,0 +1,5 @@
+![Create a user](1.png)
+![Set expiry date of two weeks for the user](2.png)
+![Prompt the user to change their password on login](3.png)
+![create altschool group](5.png)
+![add user to the altschool group](6.png)
