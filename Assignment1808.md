@@ -3,3 +3,5 @@
 ![Prompt the user to change their password on login](3.png)
 ![create altschool group](5.png)
 ![add user to the altschool group](6.png)
+![Run cat command on etc](7.png)
+![user without home director](8.png)
