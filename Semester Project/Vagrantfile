@@ -1,0 +1,116 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"
+
+  # Master Node
+  config.vm.define "master" do |master|
+    master.vm.network "private_network", ip: "192.168.56.5"
+    master.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"
+    end
+
+    # Provision script for Master node to Install LAMP stack, , SSH Pass, create PHP page, enable password authentication and restart SSH service
+    master.vm.provision "shell", inline: <<-SHELL
+      sudo apt update -y
+      sudo apt install apache2 mysql-server php php-mysql libapache2-mod-php php-cli -y
+      sudo apt-get install sshpass -y
+      sudo systemctl enable apache2
+      sudo systemctl start apache2
+      sudo ufw allow in "Apache Full"
+      sudo chmod -R 0755 /var/www/html/
+      # Install Nginx
+      sudo apt install nginx -y
+      sudo systemctl enable nginx
+      sudo systemctl start nginx
+      sudo echo "<?php phpinfo(); ?>" > /var/www/html/info.php
+      sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+      sudo systemctl restart sshd
+
+      # install nginx
+      sudo apt-get install -y nginx
+      # start and enable nginx service
+      sudo systemctl start nginx
+      sudo systemctl enable nginx
+      # configure nginx as a loadbalancer for the master and slave nodes
+      sudo rm /etc/nginx/sites-enabled/default
+      
+      # create a new nginx configuration file
+      sudo touch /etc/nginx/sites-available/loadbalancer.conf
+      # put the content of the configuration file
+      sudo echo -e "upstream backend {
+        server 192.168.56.5;
+        server 192.168.56.8;
+      }
+      server {
+        listen 8080;
+        location / {
+          proxy_pass http://backend;
+        }
+      }" > /etc/nginx/sites-available/loadbalancer.conf
+      # create a symlink of the configuration file
+      sudo ln -s /etc/nginx/sites-available/loadbalancer.conf /etc/nginx/sites-enabled/loadbalancer.conf
+      # create nginx default page
+      sudo touch /var/www/html/loadbalancer.html
+      # put the content of the default page
+      sudo  echo -e "<!DOCTYPE html>
+      <html>
+      <head>
+      <title>Load Balancer</title>
+      </head>
+      <body>
+      <h1>Load Balancer</h1>
+      <p>welcome to my default page for my load balancer</p>
+      </body>
+      </html>" > /var/www/html/loadbalancer.html
+      # restart nginx service
+      sudo systemctl restart nginx || true
+
+      
+      # Create altschool user and set the user's password
+      sudo useradd -m altschool
+      encrypted_password=$(openssl passwd -1 "altschool")
+      sudo usermod -p "$encrypted_password" altschool
+      
+      # Add altschool user to the sudoers group
+      sudo -i
+      sudo echo 'altschool ALL=(ALL:ALL) NOPASSWD: ALL' >> /etc/sudoers
+      
+      # Generate SSH Key
+      sudo su - altschool -c "echo -ne '\n' | ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -N ''"
+    SHELL
+  end
+
+  # Slave Node
+  config.vm.define "slave" do |slave|
+    slave.vm.network "private_network", ip: "192.168.56.8"
+    slave.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"
+    end
+
+    # Slave Provisioning script to install LAMP stack, SSH Pass and create PHP page
+    slave.vm.provision "shell", inline: <<-SHELL
+    sudo apt update -y
+    sudo apt install apache2 mysql-server php php-mysql libapache2-mod-php php-cli -y
+    sudo apt-get install sshpass -y
+    sudo systemctl enable apache2
+    sudo systemctl start apache2
+    sudo ufw allow in "Apache Full"
+    sudo chmod -R 0755 /var/www/html/
+    sudo echo "<?php phpinfo(); ?>" > /var/www/html/info.php
+    
+    # Create altschool user and set the user's password
+    sudo useradd -m altschool
+    encrypted_password=$(openssl passwd -1 "altschool")
+    sudo usermod -p "$encrypted_password" altschool
+    
+    # Add altschool user to sudoers group
+    sudo -i
+    sudo echo 'altschool ALL=(ALL:ALL) NOPASSWD: ALL' >> /etc/sudoers
+    
+    # Generate SSH key, create authorized_keys file, set file permissions for altschool user and copy SSH public key from Master to Slave
+    sudo su - altschool -c "echo -ne '\n' | ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -N ''"
+    cd /home/altschool/.ssh && touch authorized_keys
+    sudo chown altschool:altschool /home/altschool/.ssh/authorized_keys && sudo chmod 600 /home/altschool/.ssh/authorized_keys
+    sudo su - altschool -c "sshpass -p 'altschool' scp -o StrictHostKeyChecking=no altschool@192.168.56.5:~/.ssh/id_rsa.pub ~/.ssh/authorized_keys"
+    SHELL
+  end
+end
